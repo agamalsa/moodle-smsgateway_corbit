@@ -52,11 +52,25 @@ class api {
      * The API address: the default, unless config.php sets another one with
      * $CFG->forced_plugin_settings['smsgateway_corbit']['apiurl'] (for a test server, for example).
      *
+     * The API token is sent to this address, so it must be HTTPS. Plain HTTP is accepted only for a server
+     * on this computer (localhost or 127.0.0.1) while developer debugging is on.
+     *
      * @return string
      */
     public static function base_url(): string {
+        global $CFG;
         $url = trim((string) get_config('smsgateway_corbit', 'apiurl'));
-        return rtrim($url !== '' ? $url : self::DEFAULT_URL, '/');
+        if ($url === '') {
+            return self::DEFAULT_URL;
+        }
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $local = in_array($host, ['localhost', '127.0.0.1'], true) && !empty($CFG->debugdeveloper);
+        if ($host === '' || parse_url($url, PHP_URL_USER) !== null || ($scheme !== 'https' && !($scheme === 'http' && $local))) {
+            debugging('smsgateway_corbit: apiurl must be an https:// address; the default address is used.', DEBUG_DEVELOPER);
+            return self::DEFAULT_URL;
+        }
+        return rtrim($url, '/');
     }
 
     /**
@@ -137,13 +151,24 @@ class api {
         if ($this->token === '') {
             return [0, null, get_string('notoken', 'smsgateway_corbit')];
         }
+        if (!preg_match('/^[\x21-\x7E]+$/', $this->token)) {
+            // A space or hidden character pasted with the token: refuse it before it reaches a request header.
+            return [0, null, get_string('badtoken', 'smsgateway_corbit')];
+        }
         $curl = new \curl();
         $curl->setHeader([
             'Accept: application/json',
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->token,
         ]);
-        $options = ['CURLOPT_TIMEOUT' => 20, 'CURLOPT_CONNECTTIMEOUT' => 10];
+        // Short limits so a sign-in code or an admin page never waits long, and no redirects: the token must
+        // not be sent on to another address.
+        $options = [
+            'CURLOPT_TIMEOUT' => 10,
+            'CURLOPT_CONNECTTIMEOUT' => 5,
+            'CURLOPT_FOLLOWLOCATION' => 0,
+            'CURLOPT_MAXREDIRS' => 0,
+        ];
         $url = self::base_url() . $path;
         if ($method === 'POST') {
             $response = $curl->post($url, json_encode($body ?? new \stdClass()), $options);
@@ -154,7 +179,14 @@ class api {
         $code = (int) ($info['http_code'] ?? 0);
         if ($curl->get_errno() || $code === 0) {
             $error = trim((string) $curl->error);
-            return [0, null, get_string('connectionerror', 'smsgateway_corbit', $error !== '' ? $error : (string) $response)];
+            if ($error === '') {
+                $error = \core_text::substr(trim((string) $response), 0, 200);
+            }
+            return [0, null, get_string('connectionerror', 'smsgateway_corbit', clean_param($error, PARAM_TEXT))];
+        }
+        if ($code >= 300 && $code < 400) {
+            // A redirect is not followed (see above): report it instead of sending the token elsewhere.
+            return [$code, null, get_string('errorhttp', 'smsgateway_corbit', $code)];
         }
         return [$code, json_decode((string) $response, true), ''];
     }
@@ -182,13 +214,51 @@ class api {
         if ($code === 401) {
             return get_string('error401', 'smsgateway_corbit');
         }
+        $text = '';
         if (is_array($body)) {
             foreach (['message', 'Message', 'error'] as $key) {
                 if (!empty($body[$key]) && is_string($body[$key])) {
-                    return clean_param($body[$key], PARAM_TEXT);
+                    $text = trim(clean_param($body[$key], PARAM_TEXT));
+                    break;
+                }
+            }
+            // A validation answer lists the problem under the name of the field, such as number.
+            if (!empty($body['errors']) && is_array($body['errors'])) {
+                foreach ($body['errors'] as $field => $messages) {
+                    $first = is_array($messages) ? reset($messages) : $messages;
+                    if (!is_string($first) || trim($first) === '') {
+                        continue;
+                    }
+                    $first = trim(clean_param($first, PARAM_TEXT));
+                    if ($text === '') {
+                        $text = clean_param((string) $field, PARAM_ALPHANUMEXT) . ': ' . $first;
+                    } else if (!str_contains($text, $first)) {
+                        $text = self::sentence($text) . ' ' . clean_param((string) $field, PARAM_ALPHANUMEXT) . ': ' . $first;
+                    }
+                    break;
                 }
             }
         }
-        return get_string('errorhttp', 'smsgateway_corbit', $code);
+        if ($text === '') {
+            $text = get_string('errorhttp', 'smsgateway_corbit', $code);
+        }
+        $hint = match (true) {
+            $code === 402 => get_string('hint402', 'smsgateway_corbit'),
+            $code === 422 => get_string('hint422', 'smsgateway_corbit'),
+            $code === 429 => get_string('hint429', 'smsgateway_corbit'),
+            $code >= 500 => get_string('hint500', 'smsgateway_corbit'),
+            default => '',
+        };
+        return $hint === '' ? $text : self::sentence($text) . ' ' . $hint;
+    }
+
+    /**
+     * Ends a server message with a full stop, so a hint can follow it.
+     *
+     * @param string $text
+     * @return string
+     */
+    private static function sentence(string $text): string {
+        return preg_match('/[.!?\x{061F}]$/u', $text) ? $text : $text . '.';
     }
 }

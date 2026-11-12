@@ -18,7 +18,9 @@ namespace smsgateway_corbit\privacy;
 
 use core_privacy\local\metadata\collection;
 use core_privacy\local\request\approved_contextlist;
+use core_privacy\local\request\approved_userlist;
 use core_privacy\local\request\contextlist;
+use core_privacy\local\request\userlist;
 
 /**
  * Privacy provider: the plugin stores no personal data, but sends the number and the text of each SMS to Corbit.
@@ -31,6 +33,7 @@ use core_privacy\local\request\contextlist;
  */
 class provider implements
     \core_privacy\local\metadata\provider,
+    \core_privacy\local\request\core_userlist_provider,
     \core_privacy\local\request\plugin\provider {
     #[\Override]
     public static function get_metadata(collection $collection): collection {
@@ -58,6 +61,16 @@ class provider implements
 
     #[\Override]
     public static function delete_data_for_user(approved_contextlist $contextlist) {
+        // Nothing stored by this plugin.
+    }
+
+    #[\Override]
+    public static function get_users_in_context(userlist $userlist) {
+        // Nothing stored by this plugin.
+    }
+
+    #[\Override]
+    public static function delete_data_for_users(approved_userlist $userlist) {
         // Nothing stored by this plugin.
     }
 }

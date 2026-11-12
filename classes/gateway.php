@@ -39,7 +39,8 @@ class gateway extends \core_sms\gateway {
 
         $number = phone::normalise($message->recipientnumber, (string) ($this->config->countrycode ?? ''));
         if ($number === '') {
-            debugging('Corbit SMS: ' . get_string('invalidnumber', 'smsgateway_corbit'), DEBUG_DEVELOPER);
+            debugging('Corbit SMS: ' . s(phone::mask((string) $message->recipientnumber)) . ': '
+                . get_string('invalidnumber', 'smsgateway_corbit'), DEBUG_DEVELOPER);
             return $message->with(status: message_status::GATEWAY_REJECTED);
         }
 
@@ -48,7 +49,7 @@ class gateway extends \core_sms\gateway {
             return $message->with(status: message_status::GATEWAY_SENT);
         }
         // The reason is not stored with the message; the plugin's test page shows it.
-        debugging('Corbit SMS: ' . $result['error'], DEBUG_DEVELOPER);
+        debugging('Corbit SMS: ' . s($result['error']), DEBUG_DEVELOPER);
         $status = $result['result'] === api::RESULT_REJECTED ? message_status::GATEWAY_REJECTED : message_status::GATEWAY_FAILED;
         return $message->with(status: $status);
     }

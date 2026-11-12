@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'smsgateway_corbit';
-$plugin->version = 2026103000;
-$plugin->release = '1.0.0';
+$plugin->version = 2026111200;
+$plugin->release = '1.0.1';
 $plugin->requires = 2024100700; // Moodle 4.5, the first version with the SMS API.
 $plugin->supported = [405, 503];
 $plugin->maturity = MATURITY_STABLE;

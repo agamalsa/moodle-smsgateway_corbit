@@ -63,10 +63,12 @@ if ($gateways && ($data = $form->get_data())) {
     } else {
         $result = (new api((string) ($config->api_token ?? '')))->send($number, (string) ($config->sender_name ?? ''), $data->text);
         if ($result['result'] === api::RESULT_SENT) {
-            $notice = [get_string('testsent', 'smsgateway_corbit', ['number' => phone::mask($number), 'id' => $result['id']]),
-                \core\output\notification::NOTIFY_SUCCESS];
+            $sent = $result['id'] !== ''
+                ? get_string('testsent', 'smsgateway_corbit', ['number' => phone::mask($number), 'id' => s($result['id'])])
+                : get_string('testsentnoid', 'smsgateway_corbit', phone::mask($number));
+            $notice = [$sent, \core\output\notification::NOTIFY_SUCCESS];
         } else {
-            $notice = [get_string('testfailed', 'smsgateway_corbit', $result['error']), \core\output\notification::NOTIFY_ERROR];
+            $notice = [get_string('testfailed', 'smsgateway_corbit', s($result['error'])), \core\output\notification::NOTIFY_ERROR];
         }
     }
 }
@@ -87,7 +89,15 @@ if (!$gateways) {
     die();
 }
 
-// Account status of each Corbit gateway: the API is asked once per gateway each time this page opens.
+// Account status of each Corbit gateway: the API is asked only when the admin presses "Check accounts",
+// so opening this page or sending a test SMS does not call the API again.
+$check = optional_param('check', 0, PARAM_BOOL) && confirm_sesskey();
+$checkurl = new moodle_url($pageurl, ['check' => 1]);
+echo html_writer::div(
+    $OUTPUT->single_button($checkurl, get_string('checkaccounts', 'smsgateway_corbit'))
+        . html_writer::span(get_string('checkaccountshint', 'smsgateway_corbit'), 'text-muted small ms-2'),
+    'mb-3 d-flex align-items-center'
+);
 $table = new html_table();
 $table->head = [
     get_string('gateway', 'smsgateway_corbit'),
@@ -101,24 +111,28 @@ foreach ($records as $record) {
     $sender = trim((string) ($config->sender_name ?? ''));
     $client = new api(trim((string) ($config->api_token ?? '')));
     $status = $balance = $senders = '';
-    try {
-        $balance = s($client->balance());
-        $names = $client->approved_sender_names();
-        $senders = $names ? s(implode(', ', $names)) : get_string('none');
-        if ($sender !== '' && !in_array($sender, $names, true)) {
-            $status = html_writer::span(
-                get_string('sendernotapproved', 'smsgateway_corbit', s($sender)),
-                'badge badge-warning bg-warning text-dark'
-            );
-        } else {
-            $status = html_writer::span(get_string('connected', 'smsgateway_corbit'), 'badge badge-success bg-success');
+    if (!$check) {
+        $status = html_writer::span('—', 'text-muted');
+    } else {
+        try {
+            $balance = s($client->balance());
+            $names = $client->approved_sender_names();
+            $senders = $names ? s(implode(', ', $names)) : get_string('none');
+            if ($sender !== '' && !in_array($sender, $names, true)) {
+                $status = html_writer::span(
+                    get_string('sendernotapproved', 'smsgateway_corbit', s($sender)),
+                    'badge badge-warning bg-warning text-dark'
+                );
+            } else {
+                $status = html_writer::span(get_string('connected', 'smsgateway_corbit'), 'badge badge-success bg-success');
+            }
+        } catch (moodle_exception $e) {
+            $status = html_writer::span(get_string('notconnected', 'smsgateway_corbit'), 'badge badge-danger bg-danger')
+                . ' ' . s($e->getMessage());
         }
-    } catch (moodle_exception $e) {
-        $status = html_writer::span(get_string('notconnected', 'smsgateway_corbit'), 'badge badge-danger bg-danger')
-            . ' ' . s($e->getMessage());
     }
     if (!$record->enabled) {
-        $status .= ' ' . html_writer::span(get_string('disabled', 'smsgateway_corbit'), 'badge badge-secondary bg-secondary');
+        $status .= ' ' . html_writer::span(get_string('disabled', 'admin'), 'badge badge-secondary bg-secondary');
     }
     $editurl = new moodle_url('/sms/configure.php', ['id' => $record->id, 'returnurl' => $pageurl->out_as_local_url(false)]);
     $table->data[] = [
