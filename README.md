@@ -71,6 +71,7 @@ The plugin has no database tables of its own and only reads Moodle's SMS records
 
 ## Changes
 
+* **1.0.2:** a number that ends with a note in parentheses, such as `+971501234567 (1)` or `(101)`, is rejected instead of being read with the note's digits (which gave another person's number); parentheses must be balanced and not nested; numbers longer than 40 characters are rejected.
 * **1.0.1:** numbers are read without guessing (a number with no country code and no leading 0 is rejected, and decimals are rejected); the API address must be HTTPS and redirects are not followed; uninstalling removes the gateways and their API tokens; the test page calls the Corbit API only when you press Check accounts; clearer error messages; Privacy API userlist support.
 * **1.0.0:** first release.
 
